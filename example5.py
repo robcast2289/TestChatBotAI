@@ -16,7 +16,8 @@ class BedrockRAGSystem:
         Inicializar sistema RAG con ChromaDB y AWS Bedrock
         """
         # Configurar ChromaDB
-        self.chroma_client = chromadb.PersistentClient(path="./knowledge_base")
+        self.chroma_client = chromadb.PersistentClient(path="./Storage/knowledge_base")
+        #self.chroma_client.delete_collection(name="documentos_tecnicos")
         self.collection = self.chroma_client.get_or_create_collection(
             name="documentos_tecnicos", 
             metadata={"hnsw:space": "cosine"}
@@ -164,7 +165,7 @@ Cada respuesta debe ser entregado en formato markdown y tener lo siguiente:
 - Solución paso a paso si es necesario
 - Una pregunta de seguimiento. ¿Fue útil mi respuesta?
 - Un cierre que invite a volver. Queremos clientes fieles
-- Firma como asiste virtual de IA del departamento de Informática
+- Firma como asiste virtual IA, Departamento de Informática
 
 # Ejemplos
 
@@ -255,6 +256,19 @@ Cada respuesta debe ser entregado en formato markdown y tener lo siguiente:
 
         #return all_documents, all_metadatas, all_ids
         return general_documents
+    
+
+    def procesar_archivo(self,ruta_archivo):
+        with open(ruta_archivo, 'r', encoding='utf-8') as archivo:
+            texto = archivo.read()
+            # Dividir texto en chunks
+            chunks = self.dividir_texto_en_chunks(texto)
+            return chunks, texto
+
+    def dividir_texto_en_chunks(self, texto, tamano_chunk=500):
+        # Dividir texto en chunks de tamaño específico
+        chunks = [texto[i:i+tamano_chunk] for i in range(0, len(texto), tamano_chunk)]
+        return chunks
 
 def main():
     # Crear instancia del sistema RAG
@@ -275,11 +289,36 @@ def main():
     # ]
 
      # Ruta al archivo Excel
-    excel_file_path = '/mnt/d/Descargas/datos_inscritos_example.xls'
-    documentos = rag_system.process_excel_documents(excel_file_path)
+    # excel_file_path = '/mnt/d/Descargas/datos_inscritos_example.xls'
+    # documentos = rag_system.process_excel_documents(excel_file_path)
+
+    file_path = "/mnt/d/Descargas/inscritos_2025_2.txt"
+    file_name = "inscritos_2025_2"
+    chunks, documentos = rag_system.procesar_archivo(file_path)
+    doc = {
+             'id': f"doc_{file_name}_{1}",
+             'text': documentos,
+             'metadata': {
+                     'source': file_path,
+                     'sheet': file_name,
+                     'row_id': 1
+                 }
+         }
+    # for i, chunk in enumerate(chunks):
+    #     metadata = {
+    #                 'source': file_path,
+    #                 'sheet': file_name,
+    #                 'row_id': i
+    #             }
+    #     doc = {
+    #         'id': f"doc_{file_name}_{i}",
+    #         'text': chunk,
+    #         'metadata': metadata
+    #     }
+    #     rag_system.add_documents(doc)
     
     # Agregar documentos
-    # rag_system.add_documents(documentos)
+    rag_system.add_documents([doc])
     
     # Realizar consulta
     #consulta = "¿Qué es Python?"
@@ -293,7 +332,8 @@ def main():
         # "Explícame Machine Learning",
         # "¿Cómo funcionan los modelos de lenguaje?"
         "¿Que carreras hay disponibles?",
-        "¿Cuantos incritos hay?"
+        "¿Cuantos incritos hay?",
+        "¿Cuantos alumnos estan inscritos en el ciclo 3?"
     ]
     
     # Realizar consultas
