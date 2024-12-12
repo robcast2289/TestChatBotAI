@@ -1,8 +1,9 @@
 import os
+import pandas as pd
 import uvicorn
 import boto3
 import json
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from pydantic import BaseModel
 from typing import List, Optional
 import chromadb
@@ -25,6 +26,67 @@ bedrock_runtime = sesion.client(
     service_name='bedrock-runtime', 
     config=bedrock_config
 )
+
+system_prompt = """
+Eres un asistente virtual de inteligencia artificial, trabajador del departamento de Informática de la Universidad Galileo, eres líder mundial en la atención al cliente para el personal administrativo de la Universidad Galileo. Tu misión diaria es responder consultas, resolver problemas, proporcionar información precisa y gestionar dudas, basándote ÚNICAMENTE en el contexto proporcionado. Si no encuentras información suficiente, indica que no puedes responder completamente..
+
+Actúas con una personalidad profesional y empática, eres amable y eficiente en cada interacción.
+
+Tu objetivo es mejorar significativamente la experiencia del cliente, lo que a largo plazo aumentará la satisfacción y retención de clientes e incrementará la confianza de los dato proporcionados para el personal de Universidad Galileo, además  de elevar la reputación del departamento de Informática.
+
+Cada interacción es una oportunidad para acercarte a estos objetivos y establecer a al departamento de Informática como referente en la satisfacción del cliente.
+
+# Directrices
+Tu misión es proporcionar siembre un soporte excepcional, resolviendo problemas eficientemente, y dejando a los cliente más que satisfechos.
+
+- Saluda al cliente como si fuera tu mejor amigo, pero mantén el profesionalismo.
+- Identifica el problema rápidamente.
+- Responde basándote estrictamente en el contexto proporcionado, no te inventes las cosas, omite frases como 'Según el contexto proporcionado' u otras que haga alusión al contexto.
+- Da respuestas claras y concisas. Nada de jerga técnica incomprensible. Se claro directo y habla como si fueras humano
+- Pregunta si el cliente está satisfecho. No des nada por sentado.
+- Cierra siempre la conversación dejando una sonrisa en la cara del cliente.
+- Si se te solicita un conteo, realizalo paso a paso y verifica tu trabajo.
+- Todas las repuestas deben ser en español
+
+# Limitaciones
+- No compartas información confidencial o datos personales NUNCA.
+- No hagas promesas que no podamos cumplir.
+- Mantén el tono profesional y respetuoso siempre.
+- Si algo requiere intervención humana, di que se comunique al departamento de Informática.
+- Identifícate siempre como un asistente virtual de IA
+- Responde basándote ÚNICAMENTE en el contexto proporcionado. Si no encuentras información suficiente, indica que no puedes responder completamente.
+
+# Interacción
+- Cuando respondas se preciso y relevante. Nada de divagar.
+- Mantén la coherencia, que se entienda todo a la primera.
+- Adapta tu tono al estilo de nuestra empresa, profesional pero cercano.
+- Usa tú personalidad, no eres un asistente genérico, eres auténtico y genuino.
+
+# Formato de entrega
+Cada respuesta debe tener lo siguiente:
+- Saludo personalizado
+- Confirmación de que entendiste el problema
+- Solución paso a paso si es necesario
+- Una pregunta de seguimiento. ¿Fue útil mi respuesta?
+- Un cierre que invite a volver. Queremos clientes fieles
+- Firma como asiste virtual IA, Departamento de Informática
+
+# Ejemplos
+
+**Ejemplo 1:**
+
+1. Saludo: "¡Hola [Nombre del Cliente]! Espero que estés teniendo un excelente día."
+2. Confirmación: "Entiendo que tienes un problema con [Descripción del Problema]."
+3. Solución: "Aquí te muestro cómo resolverlo: [Pasos detallados]."
+4. Seguimiento: "¿Esta información fue de ayuda para ti?"
+5. Cierre: "Gracias por confiar en nosotros. ¡Espero verte pronto! 😊"
+6. Firma: "Tu asistente virtual IA, Departamento de Informática."
+
+# Notas
+
+- Reporta cualquier limitación en caso de incongruencias en los datos proporcionados.
+- Evita frases que hagan referencia explícita al basarte en el contexto proporcionado.
+"""
 
 # Configuración de ChromaDB
 chroma_client = chromadb.PersistentClient(path="./Storage/chroma_storage")
@@ -88,22 +150,28 @@ def invoke_claude(prompt: str, context: str = "", conversation_history: str = ""
         # Combinar historial, contexto y prompt
         full_prompt = ""
         if conversation_history:
-            full_prompt += f"Historial de conversación:\n{conversation_history}\n\n"
+            #full_prompt += f"Historial de conversación:\n{conversation_history}\n\n"
+            full_prompt += f"Historial:\n{conversation_history}\n\n"
         
         if context:
-            full_prompt += f"Contexto de documentos relevantes:\n{context}\n\n"
+            #full_prompt += f"Contexto de documentos relevantes:\n{context}\n\n"
+            full_prompt += f"Contexto:\n{context}\n\n"
         
-        full_prompt += f"Pregunta actual: {prompt}"
+        #full_prompt += f"Pregunta actual: {prompt}"
+        full_prompt += f"Pregunta: {prompt}"
         
         body = {
             "anthropic_version": "bedrock-2023-05-31",
-            "max_tokens": 1000,
+            "max_tokens": 600,
             "messages": [
                 {
                     "role": "user",
                     "content": full_prompt
                 }
-            ]
+            ],
+            "system": system_prompt,
+            "temperature": 0.4,
+            "top_p": 0.9
         }
         
         response = bedrock_runtime.invoke_model(
@@ -121,6 +189,7 @@ def invoke_claude(prompt: str, context: str = "", conversation_history: str = ""
 class DocumentInput(BaseModel):
     id: str
     text: str
+    metadata: Optional[dict] = {}
 
 class QueryInput(BaseModel):
     conversation_id: str
@@ -142,14 +211,21 @@ class RAGChatbotAPI:
         try:
             ids = [doc.id for doc in documents]
             texts = [doc.text for doc in documents]
+            metadatas = [doc.metadata for doc in documents]
             
             self.collection.add(
                 ids=ids,
-                documents=texts
+                documents=texts,
+                metadatas=metadatas
             )
             return {"status": "Documentos añadidos exitosamente"}
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+        
+    def delete_documents_by_name(self, name: str):
+        self.collection.delete(
+            where={"source": name}
+        )
     
     def query_documents(self, query: QueryInput):
         """
@@ -202,8 +278,50 @@ app = FastAPI(title="RAG Chatbot API con Contexto")
 rag_chatbot = RAGChatbotAPI()
 
 @app.post("/add_documents")
-def add_documents(documents: List[DocumentInput]):
-    return rag_chatbot.add_documents(documents)
+async def add_excel_documents(documents: List[UploadFile]):
+    for document in documents:
+        bytesExcel = await document.read()
+        # Procesar archivo Excel
+        xls = pd.ExcelFile(bytesExcel)
+        general_documents = []
+        all_documents = []
+        all_metadatas = []
+        all_ids = []
+
+        # Procesar cada hoja del Excel
+        for sheet_name in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sheet_name)
+            
+            # Convertir cada fila a un documento de texto
+            for index, row in df.iterrows():
+                # Convertir la fila a texto, omitiendo valores NaN
+                document_text = " ".join([
+                    f"{col}: {str(value)}" 
+                    for col, value in row.items() 
+                    if pd.notna(value)
+                ])
+                
+                # Generar metadatos
+                metadata = {
+                    'source': document.filename,
+                    'sheet': sheet_name,
+                    'row_id': index
+                }
+
+                doc = {
+                    'id': f"doc_{sheet_name}_{index}",
+                    'text': document_text,
+                    'metadata': metadata
+                }
+
+                doc2 = DocumentInput(**doc)
+                
+                general_documents.append(doc2)
+    return rag_chatbot.add_documents(general_documents)
+
+@app.post("/delete_documents_by_name")
+async def delete_documents_by_name(documentName: str):
+    return rag_chatbot.delete_documents_by_name(documentName)
 
 @app.post("/query")
 def query_chatbot(query: QueryInput):

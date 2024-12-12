@@ -142,6 +142,7 @@ Tu misión es proporcionar siembre un soporte excepcional, resolviendo problemas
 - Da respuestas claras y concisas. Nada de jerga técnica incomprensible. Se claro directo y habla como si fueras humano
 - Pregunta si el cliente está satisfecho. No des nada por sentado.
 - Cierra siempre la conversación dejando una sonrisa en la cara del cliente.
+- Si se te solicita un conteo, realizalo paso a paso y verifica tu trabajo.
 - Todas las repuestas deben ser en español
 
 # Limitaciones
@@ -292,8 +293,8 @@ def main():
     # excel_file_path = '/mnt/d/Descargas/datos_inscritos_example.xls'
     # documentos = rag_system.process_excel_documents(excel_file_path)
 
-    file_path = "/mnt/d/Descargas/inscritos_2025_2.txt"
     file_name = "inscritos_2025_2"
+    file_path = f"/mnt/d/Descargas/{file_name}.txt"
     chunks, documentos = rag_system.procesar_archivo(file_path)
     doc = {
              'id': f"doc_{file_name}_{1}",
@@ -333,7 +334,8 @@ def main():
         # "¿Cómo funcionan los modelos de lenguaje?"
         "¿Que carreras hay disponibles?",
         "¿Cuantos incritos hay?",
-        "¿Cuantos alumnos estan inscritos en el ciclo 3?"
+        "¿Cuantos alumnos estan inscritos en el ciclo 3?",
+        #"¿Cual es la capital de Francia?"
     ]
     
     # Realizar consultas
